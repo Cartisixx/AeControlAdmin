@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>LiveCo Admin — Panel de Control</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;1,9..40,300&display=swap" rel="stylesheet"/>
+<link rel="stylesheet" href="style.css"/>
+</head>
+<body>
+<div id="tw"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     AUTH
+═══════════════════════════════════════════════════════════════ -->
+<div id="auth">
+  <div class="auth-box sup">
+    <div class="auth-logo">
+      <div class="a-mark">L</div>
+      <div><div class="a-name">Live<span>Co</span></div><div class="a-sub">Admin Panel</div></div>
+    </div>
+    <div class="auth-card">
+      <div style="text-align:center;margin-bottom:18px"><span class="admin-badge">🔐 Acceso restringido — Administradores</span></div>
+      <h2>Iniciar sesión</h2>
+      <p class="sub">Panel de control interno. Solo personal autorizado.</p>
+      <div class="auth-form">
+        <div class="fg"><label>Correo de administrador</label><input type="email" id="a-em" placeholder="admin@liveco.mx" value="admin@liveco.mx"/></div>
+        <div class="fg"><label>Contraseña</label><input type="password" id="a-pw" placeholder="••••••••" value="admin2024" onkeydown="if(event.key==='Enter')adminLogin()"/></div>
+        <button class="btn btn-pri btn-full btn-lg" onclick="adminLogin()">Acceder al panel →</button>
+      </div>
+      <p class="auth-hint">Credenciales demo: admin@liveco.mx / admin2024</p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     ADMIN APP
+═══════════════════════════════════════════════════════════════ -->
+<div id="admin-app" class="hidden">
+  <!-- SIDEBAR NAV -->
+  <nav class="side-nav">
+    <div class="sn-logo">
+      <div class="sn-logo-row">
+        <div class="sn-mark">L</div>
+        <div><div class="sn-name">Live<span>Co</span></div><div class="sn-badge">Admin Panel v3</div></div>
+      </div>
+    </div>
+
+    <div class="sn-section">
+      <div class="sn-section-label">General</div>
+      <div class="nav-item active" onclick="navTo('dashboard')" id="ni-dashboard">
+        <span class="ni-icon">📊</span><span class="ni-label">Dashboard</span>
+      </div>
+      <div class="nav-item" onclick="navTo('analytics')" id="ni-analytics">
+        <span class="ni-icon">📈</span><span class="ni-label">Analíticas</span>
+      </div>
+      <div class="nav-item" onclick="navTo('activity')" id="ni-activity">
+        <span class="ni-icon">⚡</span><span class="ni-label">Actividad en vivo</span>
+        <span class="ni-badge" id="badge-activity">0</span>
+      </div>
+    </div>
+
+    <div class="sn-section">
+      <div class="sn-section-label">Operaciones</div>
+      <div class="nav-item" onclick="navTo('orders')" id="ni-orders">
+        <span class="ni-icon">📋</span><span class="ni-label">Pedidos / Cotizaciones</span>
+        <span class="ni-badge" id="badge-orders" style="display:none">0</span>
+      </div>
+      <div class="nav-item" onclick="navTo('users')" id="ni-users">
+        <span class="ni-icon">👤</span><span class="ni-label">Clientes registrados</span>
+      </div>
+    </div>
+
+    <div class="sn-section">
+      <div class="sn-section-label">Inventario & Catálogo</div>
+      <div class="nav-item" onclick="navTo('inventory')" id="ni-inventory">
+        <span class="ni-icon">📦</span><span class="ni-label">Inventario</span>
+      </div>
+      <div class="nav-item" onclick="navTo('catalog')" id="ni-catalog">
+        <span class="ni-icon">✏️</span><span class="ni-label">Editor de catálogo</span>
+      </div>
+    </div>
+
+    <div class="sn-section">
+      <div class="sn-section-label">Sistema</div>
+      <div class="nav-item" onclick="navTo('settings')" id="ni-settings">
+        <span class="ni-icon">⚙️</span><span class="ni-label">Configuración</span>
+      </div>
+    </div>
+
+    <div class="sn-bottom">
+      <div class="sn-user">
+        <div class="sn-av">A</div>
+        <div class="sn-user-info"><div class="name">Administrador</div><div class="role">● Super Admin</div></div>
+      </div>
+      <button class="btn btn-ghost btn-sm btn-full" style="margin-top:8px" onclick="adminLogout()">Cerrar sesión</button>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="topbar">
+      <div class="topbar-title" id="topbar-title">Dashboard General</div>
+      <div class="topbar-actions">
+        <div class="live-dot"></div><span class="live-label">En vivo</span>
+        <button class="btn btn-out btn-sm" onclick="refreshAll()">↻ Actualizar</button>
+        <button class="btn btn-pri btn-sm" onclick="seedDemoData()">⚡ Seed datos demo</button>
+      </div>
+    </div>
+
+    <div class="page-content">
+
+      <!-- ═══ DASHBOARD ════════════════════════════════════ -->
+      <div id="p-dashboard" class="sup">
+
+        <!-- KPIs -->
+        <div class="kpi-grid" id="kpi-grid"></div>
+
+        <!-- Row 1: Traffic + Conversion -->
+        <div class="grid-6040">
+          <div class="panel">
+            <div class="panel-hd"><h3><span class="ph-icon">📈</span>Tráfico semanal</h3><span id="traffic-period" style="font-size:11px;color:var(--t2)">Últimos 7 días</span></div>
+            <div class="chart-wrap" id="traffic-chart"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-hd"><h3><span class="ph-icon">🎯</span>Distribución de pedidos</h3></div>
+            <div class="panel-body" id="orders-donut" style="display:flex;align-items:center;gap:20px"></div>
+          </div>
+        </div>
+
+        <!-- Row 2: Activity + Top items -->
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-hd"><h3><span class="ph-icon">⚡</span>Actividad reciente</h3><button class="btn btn-ghost btn-sm" onclick="navTo('activity')">Ver todo</button></div>
+            <div class="feed-list" id="dash-feed" style="max-height:280px;overflow-y:auto"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-hd"><h3><span class="ph-icon">🏆</span>Equipo más solicitado</h3></div>
+            <div class="panel-body" id="top-items"></div>
+          </div>
+        </div>
+
+        <!-- Row 3: Recent orders + New users -->
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-hd"><h3><span class="ph-icon">📋</span>Pedidos recientes</h3><button class="btn btn-ghost btn-sm" onclick="navTo('orders')">Ver todos</button></div>
+            <div class="panel-body np tbl-wrap"><table class="admin-tbl" id="recent-orders-tbl"></table></div>
+          </div>
+          <div class="panel">
+            <div class="panel-hd"><h3><span class="ph-icon">👤</span>Clientes nuevos</h3><button class="btn btn-ghost btn-sm" onclick="navTo('users')">Ver todos</button></div>
+            <div id="recent-users-list" style="max-height:240px;overflow-y:auto"></div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- ═══ ANALYTICS ════════════════════════════════════ -->
+      <div id="p-analytics" class="hidden sup">
+        <div class="kpi-grid" id="analytics-kpis"></div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-hd"><h3><span class="ph-icon">📅</span>Tráfico mensual (últimos 6 meses)</span></h3></div>
+            <div class="chart-wrap" id="monthly-chart"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-hd"><h3><span class="ph-icon">🗺️</span>Pedidos por ciudad</h3></div>
+            <div class="panel-body" id="city-chart"></div>
+          </div>
+        </div>
+        <div class="grid-2">
+          <div class="panel">
+            <div class="panel-hd"><h3><span class="ph-icon">💰</span>Ingresos por categoría de equipo</h3></div>
+            <div class="panel-body" id="revenue-by-cat"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-hd"><h3><span class="ph-icon">⏱️</span>Distribución de horas de renta</h3></div>
+            <div class="panel-body" id="rental-hrs-chart"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ ACTIVITY ══════════════════════════════════════ -->
+      <div id="p-activity" class="hidden sup">
+        <div class="panel">
+          <div class="panel-hd"><h3><span class="ph-icon">⚡</span>Feed de actividad en tiempo real</h3>
+            <div style="display:flex;gap:8px">
+              <select class="filter-select" onchange="filterActivity(this.value)">
+                <option value="all">Toda la actividad</option>
+                <option value="order">Pedidos</option>
+                <option value="register">Registros</option>
+                <option value="login">Sesiones</option>
+                <option value="builder">Configurador</option>
+              </select>
+              <button class="btn btn-danger btn-sm" onclick="clearActivity()">🗑 Limpiar</button>
+            </div>
+          </div>
+          <div class="feed-list" id="full-feed" style="max-height:calc(100vh - 220px);overflow-y:auto"></div>
+        </div>
+      </div>
+
+      <!-- ═══ ORDERS ════════════════════════════════════════ -->
+      <div id="p-orders" class="hidden sup">
+        <div class="panel">
+          <div class="panel-hd">
+            <h3><span class="ph-icon">📋</span>Cotizaciones y Pedidos</h3>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-out btn-sm" onclick="exportOrdersCSV()">⬇ Exportar CSV</button>
+            </div>
+          </div>
+          <div class="filter-bar">
+            <div class="search-wrap"><input type="text" id="orders-search" placeholder="Buscar por ref, cliente, email..." oninput="renderOrders()"/></div>
+            <select class="filter-select" id="orders-status" onchange="renderOrders()">
+              <option value="all">Todos los estados</option>
+              <option value="pending">Pendiente</option>
+              <option value="confirmed">Confirmado</option>
+              <option value="completed">Completado</option>
+            </select>
+            <select class="filter-select" id="orders-sort" onchange="renderOrders()">
+              <option value="newest">Más recientes</option>
+              <option value="oldest">Más antiguos</option>
+              <option value="highest">Mayor monto</option>
+              <option value="lowest">Menor monto</option>
+            </select>
+          </div>
+          <div class="tbl-wrap"><table class="admin-tbl" id="orders-tbl"></table></div>
+        </div>
+      </div>
+
+      <!-- ═══ USERS ══════════════════════════════════════════ -->
+      <div id="p-users" class="hidden sup">
+        <div class="panel">
+          <div class="panel-hd">
+            <h3><span class="ph-icon">👤</span>Clientes registrados</h3>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-out btn-sm" onclick="exportUsersCSV()">⬇ Exportar CSV</button>
+            </div>
+          </div>
+          <div class="filter-bar">
+            <div class="search-wrap"><input type="text" id="users-search" placeholder="Buscar por nombre, email o teléfono..." oninput="renderUsers()"/></div>
+            <select class="filter-select" id="users-sort" onchange="renderUsers()">
+              <option value="newest">Más recientes</option>
+              <option value="oldest">Más antiguos</option>
+              <option value="az">A → Z</option>
+            </select>
+          </div>
+          <div id="users-list"></div>
+        </div>
+      </div>
+
+      <!-- ═══ INVENTORY ══════════════════════════════════════ -->
+      <div id="p-inventory" class="hidden sup">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+          <div>
+            <h2 style="font-family:var(--fd);font-size:20px;font-weight:800">Control de inventario</h2>
+            <p style="color:var(--t2);font-size:12px;margin-top:3px">Ajusta el stock disponible. Los cambios afectan el configurador del cliente en tiempo real.</p>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-out btn-sm" onclick="downloadStockTemplate()">⬇ Descargar plantilla CSV</button>
+            <label class="btn btn-out btn-sm" style="cursor:pointer" title="Sube un CSV con columnas: id,stock">
+              📂 Subir CSV de stock
+              <input type="file" id="stock-file-input" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleStockFileUpload(this)"/>
+            </label>
+            <button class="btn btn-out btn-sm" onclick="resetAllStock()">↺ Restaurar base</button>
+            <button class="btn btn-pri btn-sm" onclick="saveInventory()">💾 Guardar cambios</button>
+          </div>
+        </div>
+        <div class="filter-bar" style="background:var(--bg-c);border:1px solid var(--bd);border-radius:var(--r3) var(--r3) 0 0;margin-bottom:0">
+          <div class="search-wrap"><input type="text" id="inv-search" placeholder="Buscar equipo..." oninput="renderInventory()"/></div>
+          <select class="filter-select" id="inv-cat" onchange="renderInventory()">
+            <option value="all">Todas las categorías</option>
+            <option value="audio">Audio</option>
+            <option value="iluminacion">Iluminación</option>
+            <option value="estructura">Estructura</option>
+            <option value="video">Video</option>
+            <option value="backline">Backline</option>
+            <option value="fx">FX</option>
+            <option value="staff">Staff</option>
+          </select>
+          <select class="filter-select" id="inv-status" onchange="renderInventory()">
+            <option value="all">Todos</option>
+            <option value="full">Con stock</option>
+            <option value="low">Stock bajo</option>
+            <option value="out">Agotado</option>
+          </select>
+        </div>
+        <div class="panel" style="border-radius:0 0 var(--r3) var(--r3);border-top:none">
+          <div style="display:grid;grid-template-columns:1fr 80px 130px 80px;gap:12px;padding:8px 20px;border-bottom:1px solid var(--bd)">
+            <span style="font-size:10px;color:var(--t3);font-weight:600;letter-spacing:.08em;text-transform:uppercase">Equipo</span>
+            <span style="font-size:10px;color:var(--t3);font-weight:600;letter-spacing:.08em;text-transform:uppercase;text-align:center">Disponible</span>
+            <span style="font-size:10px;color:var(--t3);font-weight:600;letter-spacing:.08em;text-transform:uppercase;text-align:center">Ajustar</span>
+            <span style="font-size:10px;color:var(--t3);font-weight:600;letter-spacing:.08em;text-transform:uppercase;text-align:right">Máx.</span>
+          </div>
+          <div id="inventory-list"></div>
+        </div>
+        <div id="inv-pending-bar" class="hidden" style="position:fixed;bottom:24px;right:24px;background:var(--ye);color:#000;padding:12px 20px;border-radius:var(--r3);font-size:13px;font-weight:700;font-family:var(--fd);box-shadow:0 8px 24px rgba(245,200,66,.4);display:flex;align-items:center;gap:12px;z-index:300">
+          <span id="inv-pending-count">0 cambios sin guardar</span>
+          <button class="btn btn-sm" style="background:#000;color:var(--ye)" onclick="saveInventory()">Guardar ahora</button>
+        </div>
+      </div>
+
+      <!-- ═══ CATALOG EDITOR ════════════════════════════════ -->
+      <div id="p-catalog" class="hidden sup">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:12px">
+          <div>
+            <h2 style="font-family:var(--fd);font-size:20px;font-weight:800">Editor de catálogo</h2>
+            <p style="color:var(--t2);font-size:12px;margin-top:3px">Agrega, elimina y edita equipos. Arrastra filas para reordenar. Los cambios se publican al cliente.</p>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+            <span id="unsaved-indicator" class="hidden unsaved-indicator">⚠ Cambios sin publicar</span>
+            <button class="btn btn-green btn-sm" onclick="openNewItemModal()">＋ Agregar equipo</button>
+            <button class="btn btn-out btn-sm" onclick="resetCatalog()">↺ Descartar</button>
+            <button class="btn btn-pri btn-sm" onclick="publishCatalog()">🚀 Publicar cambios</button>
+          </div>
+        </div>
+        <div id="catalog-editor"></div>
+      </div>
+
+      <!-- ═══ SETTINGS ══════════════════════════════════════ -->
+      <div id="p-settings" class="hidden sup">
+        <h2 style="font-family:var(--fd);font-size:20px;font-weight:800;margin-bottom:6px">Configuración</h2>
+        <p style="color:var(--t2);font-size:12px;margin-bottom:20px">Ajusta parámetros operativos del sistema LiveCo Event Builder.</p>
+        <div class="settings-grid">
+          <div class="settings-card">
+            <div class="s-hd"><h3>💰 Precios y renta</h3><p>Parámetros de cotización</p></div>
+            <div class="s-body">
+              <div class="fg"><label>Horas base incluidas en precio</label><input type="number" id="cfg-base-hrs" value="8" min="1"/></div>
+              <div class="fg"><label>Tasa de horas extra (% del subtotal/hr)</label><input type="number" id="cfg-extra-rate" value="12" min="1" max="50"/></div>
+              <div class="fg"><label>Costo montaje 1 día antes (MXN)</label><input type="number" id="cfg-ass1" value="12000"/></div>
+              <div class="fg"><label>Costo montaje 2 días antes (MXN)</label><input type="number" id="cfg-ass2" value="22000"/></div>
+              <button class="btn btn-pri btn-sm" onclick="saveSettings()">Guardar precios</button>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="s-hd"><h3>🔐 Administrador</h3><p>Acceso al panel de control</p></div>
+            <div class="s-body">
+              <div class="fg"><label>Correo de admin</label><input type="email" id="cfg-admin-em" value="admin@liveco.mx"/></div>
+              <div class="fg"><label>Nueva contraseña</label><input type="password" id="cfg-admin-pw" placeholder="Dejar vacío para no cambiar"/></div>
+              <div class="fg"><label>Nombre de la empresa</label><input type="text" id="cfg-company" value="LiveCo Producción Técnica"/></div>
+              <button class="btn btn-pri btn-sm" onclick="saveAdminSettings()">Actualizar acceso</button>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="s-hd"><h3>🎨 Apariencia del cliente</h3><p>Personalización del Event Builder</p></div>
+            <div class="s-body">
+              <div class="toggle-row"><div class="tr-info"><div class="tr-label">Mostrar chat de asesor</div><div class="tr-desc">Habilita el botón de chat en el configurador</div></div><button class="toggle on" id="tog-chat" onclick="toggleSetting('tog-chat')"></button></div>
+              <div class="toggle-row"><div class="tr-info"><div class="tr-label">Modo mantenimiento</div><div class="tr-desc">Muestra pantalla de mantenimiento a clientes</div></div><button class="toggle" id="tog-maint" onclick="toggleSetting('tog-maint')"></button></div>
+              <div class="toggle-row"><div class="tr-info"><div class="tr-label">Registro de nuevos clientes</div><div class="tr-desc">Permite que nuevos usuarios se registren</div></div><button class="toggle on" id="tog-reg" onclick="toggleSetting('tog-reg')"></button></div>
+              <div class="toggle-row"><div class="tr-info"><div class="tr-label">Exportar PDF (clientes)</div><div class="tr-desc">Permite a los clientes descargar el rider</div></div><button class="toggle on" id="tog-pdf" onclick="toggleSetting('tog-pdf')"></button></div>
+            </div>
+          </div>
+          <div class="settings-card">
+            <div class="s-hd"><h3>🗑️ Datos y mantenimiento</h3><p>Gestión de datos del sistema</p></div>
+            <div class="s-body">
+              <div style="background:var(--re-d);border:1px solid rgba(245,92,92,.2);border-radius:var(--r2);padding:12px;margin-bottom:8px">
+                <div style="font-size:12px;font-weight:600;color:var(--re);margin-bottom:4px">⚠️ Zona de peligro</div>
+                <div style="font-size:11px;color:var(--t2)">Las siguientes acciones son irreversibles.</div>
+              </div>
+              <button class="btn btn-danger btn-sm btn-full" onclick="clearOrders()">🗑 Limpiar todos los pedidos</button>
+              <button class="btn btn-danger btn-sm btn-full" onclick="clearUsers()">🗑 Limpiar usuarios (excepto admin)</button>
+              <button class="btn btn-danger btn-sm btn-full" onclick="clearActivity()">🗑 Limpiar actividad</button>
+              <button class="btn btn-danger btn-sm btn-full" onclick="resetAllData()">💀 Reset total del sistema</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /page-content -->
+  </div><!-- /main -->
+</div><!-- /admin-app -->
+
+<!-- NEW ITEM MODAL -->
+<div class="modal-bg hidden" id="new-item-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-hd">
+      <h2 id="nim-title">➕ Agregar equipo al catálogo</h2>
+      <button class="modal-close" onclick="closeNewItemModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px">
+        <div class="fg" style="grid-column:1/-1"><label>Nombre del equipo *</label><input type="text" id="nim-name" placeholder="Ej: L'Acoustics K3"/></div>
+        <div class="fg" style="grid-column:1/-1"><label>Descripción corta *</label><input type="text" id="nim-desc" placeholder="Ej: Top line array de nueva generación"/></div>
+        <div class="fg">
+          <label>Categoría *</label>
+          <select id="nim-cat">
+            <option value="audio">Audio</option>
+            <option value="iluminacion">Iluminación</option>
+            <option value="estructura">Estructura</option>
+            <option value="video">Video</option>
+            <option value="backline">Backline</option>
+            <option value="fx">FX</option>
+            <option value="staff">Staff</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label>Subcategoría (sección)</label>
+          <input type="text" id="nim-section" placeholder="Ej: Sistema PA"/>
+        </div>
+        <div class="fg"><label>Precio por unidad (MXN) *</label><input type="number" id="nim-price" placeholder="18500" min="0"/></div>
+        <div class="fg"><label>Stock disponible *</label><input type="number" id="nim-stock" placeholder="12" min="0"/></div>
+        <div class="fg"><label>Mínimo de renta</label><input type="number" id="nim-min" placeholder="4" min="0" value="1"/></div>
+        <div class="fg"><label>ID único (auto si vacío)</label><input type="text" id="nim-id" placeholder="lac-k3 (sin espacios)"/></div>
+      </div>
+      <div style="background:var(--ac-d);border:1px solid rgba(245,168,0,.2);border-radius:var(--r2);padding:12px;margin-bottom:16px;font-size:11px;color:var(--t2)">
+        💡 El equipo aparecerá en el configurador del cliente al publicar cambios. El ID debe ser único — si ya existe uno con ese ID se sobreescribirá.
+      </div>
+      <div style="display:flex;gap:10px;justify-content:flex-end">
+        <button class="btn btn-ghost" onclick="closeNewItemModal()">Cancelar</button>
+        <button class="btn btn-pri" onclick="saveNewItem()">✓ Agregar al catálogo</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- STOCK UPLOAD MODAL -->
+<div class="modal-bg hidden" id="stock-upload-modal">
+  <div class="modal" style="max-width:580px">
+    <div class="modal-hd">
+      <h2>📂 Actualización masiva de stock</h2>
+      <button class="modal-close" onclick="closeStockModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="stock-upload-result"></div>
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+        <button class="btn btn-ghost" onclick="closeStockModal()">Cerrar</button>
+        <button class="btn btn-pri" id="stock-apply-btn" onclick="applyUploadedStock()" style="display:none">💾 Aplicar y guardar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ORDER MODAL -->
+<div class="modal-bg hidden" id="order-modal">
+  <div class="modal">
+    <div class="modal-hd">
+      <h2 id="om-ref">Pedido –</h2>
+      <button class="modal-close" onclick="closeOrderModal()">✕</button>
+    </div>
+    <div class="modal-body" id="om-body"></div>
+  </div>
+</div>
+
+<!-- USER MODAL -->
+<div class="modal-bg hidden" id="user-modal">
+  <div class="modal">
+    <div class="modal-hd">
+      <h2 id="um-name">Cliente –</h2>
+      <button class="modal-close" onclick="closeUserModal()">✕</button>
+    </div>
+    <div class="modal-body" id="um-body"></div>
+  </div>
+</div>
+
+<script src="main.js"></script>
+</body>
+</html>
+
