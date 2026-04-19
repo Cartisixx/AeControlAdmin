@@ -261,6 +261,7 @@
               📂 Subir CSV de stock
               <input type="file" id="stock-file-input" accept=".csv,.xlsx,.xls" style="display:none" onchange="handleStockFileUpload(this)"/>
             </label>
+            <button class="btn btn-danger btn-sm" onclick="bulkClearInventory()">🗑 Limpiar filtered</button>
             <button class="btn btn-out btn-sm" onclick="resetAllStock()">↺ Restaurar base</button>
             <button class="btn btn-pri btn-sm" onclick="saveInventory()">💾 Guardar cambios</button>
           </div>
@@ -309,6 +310,7 @@
           <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
             <span id="unsaved-indicator" class="hidden unsaved-indicator">⚠ Cambios sin publicar</span>
             <button class="btn btn-green btn-sm" onclick="openNewItemModal()">＋ Agregar equipo</button>
+            <button class="btn btn-danger btn-sm" onclick="bulkDeleteCatalog()">🗑 Borrar masivo</button>
             <button class="btn btn-out btn-sm" onclick="resetCatalog()">↺ Descartar</button>
             <button class="btn btn-pri btn-sm" onclick="publishCatalog()">🚀 Publicar cambios</button>
           </div>

@@ -99,6 +99,7 @@ const CATALOG_STEPS=[
    STATE & HELPERS
 ================================================================ */
 const $=id=>document.getElementById(id);
+const API_ROOT='https://liveco.com.mx/api.php';
 const fmt=n=>'$'+Math.round(n).toLocaleString('es-MX');
 const fmtN=n=>parseInt(n||0).toLocaleString('es-MX');
 const randInt=(a,b)=>Math.floor(Math.random()*(b-a+1))+a;
@@ -121,11 +122,155 @@ function toast(msg,type='info'){
 }
 
 /* ================================================================
-   DATA LAYER — reads localStorage shared with client
+   DATA LAYER — orders/catalog/custom/deleted come from the API
 ================================================================ */
 function getUsers(){return JSON.parse(localStorage.getItem('lc_users')||'[]')}
 function getOrders(){return JSON.parse(localStorage.getItem('lc_orders')||'[]')}
 function getActivity(){return JSON.parse(localStorage.getItem('lc_activity')||'[]')}
+
+let openOrderRefs = {}; // accordion state
+
+async function fetchRemoteOrders(){
+  try {
+    const res = await fetch(`${API_ROOT}?resource=orders`, {cache:'no-store'});
+    const data = await res.json();
+    if(res.ok && data.status === 'success' && Array.isArray(data.orders)){
+      const orders = data.orders.map(o => ({
+        ref: o.ref,
+        user: o.cliente_email,
+        userName: o.cliente_nombre,
+        userPhone: o.cliente_telefono,
+        total: parseFloat(o.total||0),
+        city: o.ciudad,
+        date: o.fecha_evento,
+        att: parseInt(o.asistentes||0),
+        artist: o.artista,
+        notes: o.notas,
+        rentalHrs: parseInt(o.hrs_renta||8),
+        assembly: o.montaje,
+        items: Array.isArray(o.items)?o.items:[],
+        status: o.status||'pending',
+        created: o.created ? new Date(o.created).getTime() : Date.now()
+      }));
+      localStorage.setItem('lc_orders', JSON.stringify(orders));
+      return orders;
+    }
+  } catch(err){ console.error('fetchRemoteOrders error', err); }
+  return getOrders();
+}
+
+async function fetchRemoteCatalog(){
+  try {
+    const res = await fetch(`${API_ROOT}?resource=catalog`, {cache:'no-store'});
+    const data = await res.json();
+    if(data.status==='success' && Array.isArray(data.catalog)){
+      const ov = {};
+      data.catalog.forEach(c => {
+        ov[c.item_id] = {};
+        if(c.price !== null) ov[c.item_id].price = parseInt(c.price);
+        if(c.min_renta !== null) ov[c.item_id].min = parseInt(c.min_renta);
+        if(c.stock_base !== null) ov[c.item_id].stock = parseInt(c.stock_base);
+      });
+      localStorage.setItem('lc_catalog', JSON.stringify(ov));
+      return ov;
+    }
+  } catch(err){ console.error('fetchRemoteCatalog error', err); }
+  return getCatalogOverrides();
+}
+
+async function fetchRemoteCustom(){
+  try {
+    const res = await fetch(`${API_ROOT}?resource=custom`, {cache:'no-store'});
+    const data = await res.json();
+    if(data.status==='success' && Array.isArray(data.custom)){
+      const items = data.custom.map(c => ({
+        id: c.id,
+        name: c.name,
+        desc: c.descripcion || '',
+        price: parseInt(c.price||0),
+        stock: parseInt(c.stock||0),
+        min: parseInt(c.min_renta||1),
+        category: c.category || '',
+        section: c.section || 'Equipos adicionales',
+        custom: true
+      }));
+      localStorage.setItem('lc_custom_items', JSON.stringify(items));
+      return items;
+    }
+  } catch(err){ console.error('fetchRemoteCustom error', err); }
+  return getCustomItems();
+}
+
+async function fetchRemoteDeleted(){
+  try {
+    const res = await fetch(`${API_ROOT}?resource=deleted`, {cache:'no-store'});
+    const data = await res.json();
+    if(data.status==='success' && Array.isArray(data.deleted)){
+      localStorage.setItem('lc_deleted_items', JSON.stringify(data.deleted));
+      return data.deleted;
+    }
+  } catch(err){ console.error('fetchRemoteDeleted error', err); }
+  return getDeletedItems();
+}
+
+async function fetchRemoteInventory(){
+  try {
+    const res = await fetch(`${API_ROOT}`, {cache:'no-store'});
+    const data = await res.json();
+    if(data.status==='success' && Array.isArray(data.inventory)){
+      const inv = {};
+      data.inventory.forEach(i => { inv[i.id] = parseInt(i.stock); });
+      localStorage.setItem('lc_inventory', JSON.stringify(inv));
+      return inv;
+    }
+  } catch(err){ console.error('fetchRemoteInventory error', err); }
+  return getInventory();
+}
+
+async function fetchAllRemote(){
+  await Promise.all([
+    fetchRemoteUsers(),
+    fetchRemoteOrders(),
+    fetchRemoteCatalog(),
+    fetchRemoteCustom(),
+    fetchRemoteDeleted(),
+    fetchRemoteInventory()
+  ]);
+}
+
+let adminUserRefreshTimer=null;
+
+async function fetchRemoteUsers(){
+  try {
+    const res = await fetch(`${API_ROOT}?resource=clients`, {cache:'no-store'});
+    const data = await res.json();
+    if(res.ok && data.status === 'success' && Array.isArray(data.clients)){
+      const users = data.clients.map(u=>({
+        name:u.nombre||'',
+        email:u.correo||'',
+        phone:u.telefono||'',
+        created:u.created?Number(u.created):Date.now()
+      }));
+      localStorage.setItem('lc_users',JSON.stringify(users));
+      return users;
+    }
+  } catch(err){
+    console.error('fetchRemoteUsers error', err);
+  }
+  return getUsers();
+}
+
+function startAdminUserRefresh(){
+  if(adminUserRefreshTimer) clearInterval(adminUserRefreshTimer);
+  adminUserRefreshTimer = setInterval(async () => {
+    if(!adminUser) return;
+    await Promise.all([fetchRemoteUsers(), fetchRemoteOrders()]);
+    if(currentPage==='users') renderUsers();
+    if(currentPage==='orders') renderOrders();
+    if(currentPage==='dashboard') renderDashboard();
+    updateBadges();
+  }, 10000);
+}
 function getInventory(){return JSON.parse(localStorage.getItem('lc_inventory')||'{}')}
 function getCatalogOverrides(){return JSON.parse(localStorage.getItem('lc_catalog')||'{}')}
 function getSettings(){return JSON.parse(localStorage.getItem('lc_settings')||'{}')}
@@ -206,7 +351,7 @@ function seedDemoData(){
 /* ================================================================
    AUTH
 ================================================================ */
-function adminLogin(){
+async function adminLogin(){
   const em=$('a-em').value.trim(), pw=$('a-pw').value;
   const settings=getSettings();
   const adminEmail=settings.adminEmail||'admin@liveco.mx';
@@ -216,6 +361,8 @@ function adminLogin(){
     $('auth').classList.add('hidden');
     $('admin-app').classList.remove('hidden');
     logActivity('admin','Admin inició sesión en el panel',{icon:'🔐',bg:'var(--re-d)'});
+    await fetchAllRemote();
+    startAdminUserRefresh();
     refreshAll();
     toast('Bienvenido al panel de administración.','ok');
   }else{
@@ -227,6 +374,8 @@ function adminLogin(){
 
 function adminLogout(){
   adminUser=null;
+  if(adminUserRefreshTimer) clearInterval(adminUserRefreshTimer);
+  adminUserRefreshTimer = null;
   $('admin-app').classList.add('hidden');
   $('auth').classList.remove('hidden');
 }
@@ -248,6 +397,18 @@ function navTo(page){
   $('topbar-title').textContent=PAGE_TITLES[page]||page;
   currentPage=page;
   renderPage(page);
+  if(page==='users' && adminUser){
+    fetchRemoteUsers().then(renderUsers);
+  }
+  if(page==='orders' && adminUser){
+    fetchRemoteOrders().then(()=>{ renderOrders(); updateBadges(); });
+  }
+  if(page==='inventory' && adminUser){
+    Promise.all([fetchRemoteCustom(), fetchRemoteDeleted(), fetchRemoteInventory()]).then(renderInventory);
+  }
+  if(page==='catalog' && adminUser){
+    Promise.all([fetchRemoteCatalog(), fetchRemoteCustom(), fetchRemoteDeleted()]).then(renderCatalog);
+  }
 }
 
 function renderPage(page){
@@ -551,45 +712,213 @@ function renderOrders(){
     return parseFloat(a.total||0)-parseFloat(b.total||0);
   });
 
-  const tbl=$('orders-tbl');
-  const sMap={pending:'tag-ye',confirmed:'tag-bl',completed:'tag-gr'};
-  const sLbl={pending:'Pendiente',confirmed:'Confirmado',completed:'Completado'};
+  const wrap=$('orders-tbl');
 
-  if(!orders.length){tbl.innerHTML=`<tr><td colspan="7" class="tbl-empty"><div class="ei">📋</div>Sin pedidos. Genera datos demo con el botón "Seed datos demo".</td></tr>`;return;}
+  if(!orders.length){
+    wrap.innerHTML=`<tr><td colspan="7"><div class="tbl-empty" style="padding:32px"><div class="ei">📋</div>Sin pedidos. Cuando un cliente proceda al pago en el cotizador, su orden aparecerá aquí.</div></td></tr>`;
+    return;
+  }
 
-  tbl.innerHTML=`<thead><tr><th>REF</th><th>Cliente</th><th>Email</th><th>Total</th><th>Ciudad</th><th>Estado</th><th>Acciones</th></tr></thead><tbody>
-    ${orders.map(o=>`<tr>
-      <td><span class="mono">${o.ref}</span></td>
-      <td class="name-cell">${o.userName||o.user}</td>
-      <td class="muted" style="font-size:11px">${o.user}</td>
-      <td style="font-weight:700;color:var(--ac)">${fmt(o.total)}</td>
-      <td class="muted">${o.city||'–'}</td>
-      <td>
-        <select style="background:var(--bg-in);border:1px solid var(--bd);border-radius:6px;padding:4px 6px;color:var(--t1);font-size:11px;cursor:pointer" onchange="changeOrderStatus('${o.ref}',this.value)">
-          <option value="pending" ${(o.status||'pending')==='pending'?'selected':''}>Pendiente</option>
-          <option value="confirmed" ${o.status==='confirmed'?'selected':''}>Confirmado</option>
-          <option value="completed" ${o.status==='completed'?'selected':''}>Completado</option>
-        </select>
-      </td>
-      <td>
-        <button class="btn btn-ghost btn-sm" onclick="openOrderModal('${o.ref}')">Ver</button>
-        <button class="btn btn-danger btn-sm" onclick="deleteOrder('${o.ref}')">✕</button>
-      </td>
-    </tr>`).join('')}
-  </tbody>`;
+  wrap.innerHTML=`<tbody><tr><td style="padding:0">${orders.map(o=>{
+    const open=openOrderRefs[o.ref];
+    const items=Array.isArray(o.items)?o.items:[];
+    const itemRows=items.length?items.map(it=>`
+      <tr>
+        <td class="bold">${(it.name||it.id||'-').replace(/</g,'&lt;')}</td>
+        <td class="muted" style="font-size:11px">${(it.section||it.category||'').replace(/</g,'&lt;')}</td>
+        <td style="text-align:center">${it.qty||it.q||0}</td>
+        <td style="text-align:right">${fmt(it.price||0)}</td>
+        <td style="text-align:right;font-weight:700;color:var(--ac)">${fmt((it.qty||it.q||0)*(it.price||0))}</td>
+      </tr>`).join(''):`<tr><td colspan="5" class="muted" style="text-align:center;padding:12px">Sin equipos en esta orden.</td></tr>`;
+
+    return `
+    <div class="order-acc" style="border:1px solid var(--bd);border-radius:var(--r2);margin:0 12px 10px;background:var(--bg-c)">
+      <div class="order-acc-hd" onclick="toggleOrder('${o.ref}')" style="display:grid;grid-template-columns:140px 1fr 110px 110px 130px 60px;gap:10px;align-items:center;padding:12px 16px;cursor:pointer">
+        <div><span class="mono" style="font-weight:700">${o.ref}</span></div>
+        <div>
+          <div class="name-cell" style="font-weight:700">${(o.userName||o.user||'-').replace(/</g,'&lt;')}</div>
+          <div class="muted" style="font-size:11px">${(o.user||'').replace(/</g,'&lt;')} ${o.userPhone?'· '+o.userPhone.replace(/</g,'&lt;'):''}</div>
+        </div>
+        <div style="font-weight:700;color:var(--ac)">${fmt(o.total)}</div>
+        <div class="muted">${(o.city||'–').replace(/</g,'&lt;')}</div>
+        <div onclick="event.stopPropagation()">
+          <select style="background:var(--bg-in);border:1px solid var(--bd);border-radius:6px;padding:4px 6px;color:var(--t1);font-size:11px;cursor:pointer;width:100%" onchange="changeOrderStatus('${o.ref}',this.value)">
+            <option value="pending" ${(o.status||'pending')==='pending'?'selected':''}>Pendiente</option>
+            <option value="confirmed" ${o.status==='confirmed'?'selected':''}>Confirmado</option>
+            <option value="completed" ${o.status==='completed'?'selected':''}>Completado</option>
+          </select>
+        </div>
+        <div style="text-align:right;font-size:18px">${open?'▾':'▸'}</div>
+      </div>
+      ${open?`
+      <div class="order-acc-body" style="padding:14px 16px;border-top:1px solid var(--bd);background:var(--bg-c2)">
+        <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:14px">
+          <div class="minfo"><div class="minfo-label">Fecha del evento</div><div class="minfo-val">${o.date||'Por confirmar'}</div></div>
+          <div class="minfo"><div class="minfo-label">Asistentes</div><div class="minfo-val">${fmtN(o.att||0)}</div></div>
+          <div class="minfo"><div class="minfo-label">Horas de renta</div><div class="minfo-val">${o.rentalHrs||8}h</div></div>
+          <div class="minfo"><div class="minfo-label">Montaje</div><div class="minfo-val">${o.assembly||'same'}</div></div>
+          <div class="minfo"><div class="minfo-label">Artista / acto</div><div class="minfo-val">${(o.artist||'–').replace(/</g,'&lt;')}</div></div>
+          <div class="minfo"><div class="minfo-label">Teléfono cliente</div><div class="minfo-val">${(o.userPhone||'–').replace(/</g,'&lt;')}</div></div>
+          <div class="minfo" style="grid-column:span 2"><div class="minfo-label">Notas técnicas</div><div class="minfo-val" style="font-size:11px">${(o.notes||'Sin notas.').replace(/</g,'&lt;')}</div></div>
+        </div>
+        <h4 style="font-family:var(--fd);font-size:13px;margin:8px 0">Equipos solicitados</h4>
+        <div class="tbl-wrap" style="margin-bottom:14px">
+          <table class="admin-tbl">
+            <thead><tr><th>Equipo</th><th>Sección</th><th style="text-align:center">Cant.</th><th style="text-align:right">Precio</th><th style="text-align:right">Subtotal</th></tr></thead>
+            <tbody>${itemRows}</tbody>
+          </table>
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap">
+          <button class="btn btn-pri btn-sm" onclick="downloadRiderForOrder('${o.ref}')">📄 Descargar Rider Técnico (PDF)</button>
+          <button class="btn btn-green btn-sm" onclick="changeOrderStatus('${o.ref}','confirmed')">✓ Confirmar</button>
+          <button class="btn btn-out btn-sm" onclick="changeOrderStatus('${o.ref}','completed')">✅ Completado</button>
+          <button class="btn btn-danger btn-sm" onclick="deleteOrder('${o.ref}')">🗑 Eliminar</button>
+        </div>
+      </div>`:''}
+    </div>`;
+  }).join('')}</td></tr></tbody>`;
 }
 
-function changeOrderStatus(ref,status){
+function toggleOrder(ref){
+  openOrderRefs[ref]=!openOrderRefs[ref];
+  renderOrders();
+}
+
+async function changeOrderStatus(ref,status){
   let orders=getOrders();
   const idx=orders.findIndex(o=>o.ref===ref);
-  if(idx>-1){orders[idx].status=status;localStorage.setItem('lc_orders',JSON.stringify(orders));toast(`Pedido ${ref} → ${status}`,'ok');}
+  if(idx>-1){orders[idx].status=status;localStorage.setItem('lc_orders',JSON.stringify(orders));}
+  try {
+    const res = await fetch(API_ROOT, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action:'update_order_status', ref, status})
+    });
+    const data = await res.json().catch(()=>null);
+    if(data && data.status==='success') toast(`Pedido ${ref} → ${status}`,'ok');
+    else toast(`No se pudo actualizar el estado del pedido en el servidor.`,'err');
+  } catch(err){ toast('Fallo de red al actualizar pedido.','err'); }
+  renderOrders();
 }
 
-function deleteOrder(ref){
+async function deleteOrder(ref){
   if(!confirm(`¿Eliminar pedido ${ref}?`))return;
   let orders=getOrders().filter(o=>o.ref!==ref);
   localStorage.setItem('lc_orders',JSON.stringify(orders));
+  try {
+    await fetch(API_ROOT, {
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action:'delete_order', ref})
+    });
+  } catch(err){ console.error('deleteOrder', err); }
   renderOrders();updateBadges();toast('Pedido eliminado.','warn');
+}
+
+/* ================================================================
+   RIDER TÉCNICO — descarga desde panel admin
+================================================================ */
+function downloadRiderForOrder(ref){
+  const order = getOrders().find(o => o.ref === ref);
+  if(!order){ toast('Pedido no encontrado.','err'); return; }
+  const items = Array.isArray(order.items) ? order.items : [];
+  const grouped = {};
+  items.forEach(it => {
+    const cat = it.category || it.section || 'Equipos';
+    if(!grouped[cat]) grouped[cat] = [];
+    grouped[cat].push(it);
+  });
+
+  const sectionsHtml = Object.entries(grouped).map(([cat, list]) => `
+    <div class="pdf-section">
+      <div class="pdf-sec-hd">${cat.toUpperCase()}</div>
+      <table class="pdf-table">
+        <thead><tr><th>Equipo</th><th>Sección</th><th class="tc">Cant.</th><th class="tr">Unitario</th><th class="tr">Subtotal</th></tr></thead>
+        <tbody>
+          ${list.map(it => `
+            <tr>
+              <td class="bold">${(it.name||it.id||'-').replace(/</g,'&lt;')}</td>
+              <td class="muted">${(it.section||'').replace(/</g,'&lt;')}</td>
+              <td class="tc">${it.qty||it.q||0}</td>
+              <td class="tr">${fmt(it.price||0)}</td>
+              <td class="tr bold">${fmt((it.qty||it.q||0)*(it.price||0))}</td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`).join('');
+
+  const now = new Date().toLocaleDateString('es-MX',{day:'2-digit',month:'long',year:'numeric'});
+  const html = `<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"/><title>Rider técnico ${ref}</title>
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Helvetica Neue',Helvetica,Arial,sans-serif;font-size:10px;color:#1a1a2e;background:#fff;padding:28px}
+@page{size:A4;margin:18mm 16mm}
+@media print{.no-print{display:none}}
+.hdr{display:flex;align-items:center;justify-content:space-between;padding-bottom:14px;border-bottom:3px solid #f5a800;margin-bottom:18px}
+.logo-mark{width:36px;height:36px;background:#f5a800;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:18px;font-weight:900;color:#000}
+.logo-name{font-size:22px;font-weight:900;color:#0a0a1a;letter-spacing:-0.02em}
+.logo-name span{color:#f5a800}
+.hdr-meta{text-align:right;color:#666;font-size:9px;line-height:1.7}
+.hdr-meta strong{color:#1a1a2e;font-size:10px}
+.hdr-title{font-size:11px;font-weight:700;color:#f5a800;letter-spacing:.1em;text-transform:uppercase;margin-top:3px}
+.info-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:18px;padding:14px;background:#f9f9f9;border-radius:6px;border-left:4px solid #f5a800}
+.info-block .label{font-size:8px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:#999;margin-bottom:3px}
+.info-block .val{font-size:11px;font-weight:600;color:#1a1a2e}
+.pdf-section{margin-bottom:16px}
+.pdf-sec-hd{background:#1a1a2e;color:#f5a800;padding:6px 10px;font-size:9px;font-weight:700;letter-spacing:.12em;border-radius:4px 4px 0 0}
+.pdf-table{width:100%;border-collapse:collapse}
+.pdf-table thead tr{background:#f5f5f5}
+.pdf-table th{padding:6px 8px;font-size:8px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:#555;border-bottom:2px solid #e0e0e0;text-align:left}
+.pdf-table td{padding:6px 8px;font-size:9px;border-bottom:1px solid #f0f0f0;vertical-align:top}
+.pdf-table .bold{font-weight:700;color:#1a1a2e}
+.pdf-table .muted{color:#888}
+.pdf-table .tc{text-align:center}
+.pdf-table .tr{text-align:right}
+.totals{margin-top:16px;text-align:right}
+.totals .total-final{display:inline-block;background:#f5a800;color:#000;padding:8px 14px;border-radius:4px;font-weight:900;font-size:13px}
+.notes{margin-top:18px;padding:12px;background:#f9f9f9;border-radius:6px;border:1px solid #e8e8e8;font-size:9px;color:#444;line-height:1.6}
+.footer{margin-top:24px;padding-top:10px;border-top:1px solid #e0e0e0;font-size:8px;color:#aaa;line-height:1.7}
+</style></head><body>
+<div class="hdr">
+  <div style="display:flex;align-items:center;gap:10px">
+    <div class="logo-mark">L</div>
+    <div>
+      <div class="logo-name">Live<span>Co</span></div>
+      <div style="font-size:8px;color:#999;letter-spacing:.05em">PRODUCCIÓN TÉCNICA DE EVENTOS</div>
+    </div>
+  </div>
+  <div class="hdr-meta">
+    <div class="hdr-title">Rider Técnico</div>
+    <div><strong>Ref:</strong> ${ref}</div>
+    <div><strong>Emitido:</strong> ${now}</div>
+    <div><strong>Estado:</strong> ${order.status||'pending'}</div>
+  </div>
+</div>
+<div class="info-grid">
+  <div>
+    <div class="info-block"><div class="label">Cliente</div><div class="val">${(order.userName||order.user||'-').replace(/</g,'&lt;')}</div></div>
+    <div style="margin-top:6px" class="info-block"><div class="label">Correo</div><div class="val">${(order.user||'').replace(/</g,'&lt;')}</div></div>
+    <div style="margin-top:6px" class="info-block"><div class="label">Teléfono</div><div class="val">${(order.userPhone||'–').replace(/</g,'&lt;')}</div></div>
+  </div>
+  <div>
+    <div class="info-block"><div class="label">Fecha del evento</div><div class="val">${order.date||'Por confirmar'}</div></div>
+    <div style="margin-top:6px" class="info-block"><div class="label">Ciudad</div><div class="val">${(order.city||'–').replace(/</g,'&lt;')}</div></div>
+    <div style="margin-top:6px" class="info-block"><div class="label">Asistentes</div><div class="val">${fmtN(order.att||0)} personas</div></div>
+    <div style="margin-top:6px" class="info-block"><div class="label">Duración renta</div><div class="val">${order.rentalHrs||8} hrs</div></div>
+  </div>
+</div>
+${sectionsHtml || '<p style="padding:10px;color:#888">Sin equipos en esta orden.</p>'}
+<div class="totals"><span class="total-final">TOTAL: ${fmt(order.total||0)}</span></div>
+<div class="notes"><strong>Notas técnicas:</strong> ${(order.notes||'Sin observaciones.').replace(/</g,'&lt;')}</div>
+<div class="footer">
+  <strong>LiveCo — Producción Técnica de Eventos</strong> · Tijuana, BC México · produccion@liveco.mx · +52 1 664 246 7879
+</div>
+<script>window.onload=()=>window.print();<\/script>
+</body></html>`;
+
+  const w = window.open('', '_blank', 'width=900,height=700');
+  if(w){ w.document.write(html); w.document.close(); }
+  else toast('Permite ventanas emergentes para descargar el rider.','err');
 }
 
 function openOrderModal(ref){
@@ -728,9 +1057,15 @@ function renderInventory(){
   const cat=($('inv-cat')||{value:'all'}).value;
   const status=($('inv-status')||{value:'all'}).value;
   const saved=getInventory();
-  let items=getAllCatalogItems();
+  const deletedIds=new Set(getDeletedItems());
+  const customs=getCustomItems().map(ci=>({
+    ...ci,
+    categoryLabel:ci.category||'Personalizado',
+    section:ci.section||'Equipos adicionales'
+  }));
+  let items=[...getAllCatalogItems(), ...customs].filter(i=>!deletedIds.has(i.id));
 
-  if(search)items=items.filter(i=>i.name.toLowerCase().includes(search)||i.section.toLowerCase().includes(search));
+  if(search)items=items.filter(i=>(i.name||'').toLowerCase().includes(search)||(i.section||'').toLowerCase().includes(search));
   if(cat!=='all')items=items.filter(i=>i.category===cat);
   if(status!=='all'){
     items=items.filter(i=>{
@@ -798,14 +1133,67 @@ function updatePendingBar(){
   else bar.classList.add('hidden');
 }
 
-function saveInventory(){
-  const saved=getInventory();
-  Object.assign(saved,inventoryChanges);
-  localStorage.setItem('lc_inventory',JSON.stringify(saved));
-  inventoryChanges={};
-  renderInventory();
-  toast(`✅ Inventario guardado. Los cambios son visibles para los clientes.`,'ok');
-  logActivity('admin','Admin actualizó el inventario de equipos',{icon:'📦',bg:'var(--ac-d)'});
+function buildInventoryPayload(){
+  const allItems=[...getAllCatalogItems(), ...getCustomItems().map(ci=>({
+    ...ci,
+    category:ci.category,
+    categoryLabel:ci.category,
+    section:ci.section
+  }))];
+  const inv=getInventory();
+  const knownIds=new Set(allItems.map(i=>i.id));
+
+  const payload=allItems.map(item=>({
+    id:item.id,
+    name:item.name||'',
+    category:item.categoryLabel||item.category||'',
+    section:item.section||'',
+    stock_nuevo: inv[item.id]!==undefined ? inv[item.id] : item.stock
+  }));
+
+  Object.entries(inv).forEach(([id,stock])=>{
+    if(!knownIds.has(id)){
+      payload.push({
+        id,
+        name:id,
+        category:'',
+        section:'',
+        stock_nuevo:stock
+      });
+    }
+  });
+
+  return payload;
+}
+
+async function saveInventory(){
+  const payload=buildInventoryPayload();
+
+  try {
+    const res=await fetch(API_ROOT,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload)
+    });
+
+    const data = await res.json().catch(()=>null);
+    if(!res.ok || !data || data.status!=='success'){
+      const message = data && data.message ? data.message : `Error al guardar inventario (${res.status})`;
+      toast(`❌ No se pudo enviar el inventario: ${message}`,'err');
+      return;
+    }
+
+    const saved=getInventory();
+    Object.assign(saved,inventoryChanges);
+    localStorage.setItem('lc_inventory',JSON.stringify(saved));
+    inventoryChanges={};
+    renderInventory();
+    toast('✅ Inventario sincronizado con el servidor y guardado localmente.','ok');
+    logActivity('admin','Admin actualizó el inventario de equipos',{icon:'📦',bg:'var(--ac-d)'});
+  } catch(err){
+    toast('❌ Fallo de red al enviar el inventario.','err');
+    console.error('saveInventory error',err);
+  }
 }
 
 function resetAllStock(){
@@ -816,6 +1204,77 @@ function resetAllStock(){
   inventoryChanges={};
   renderInventory();
   toast('Stock restaurado a valores base.','ok');
+}
+
+function bulkClearInventory(){
+  const search=($('inv-search')||{value:''}).value.toLowerCase();
+  const cat=($('inv-cat')||{value:'all'}).value;
+  const status=($('inv-status')||{value:'all'}).value;
+  const saved=getInventory();
+  
+  let items=getAllCatalogItems();
+  if(search)items=items.filter(i=>i.name.toLowerCase().includes(search)||i.section.toLowerCase().includes(search));
+  if(cat!=='all')items=items.filter(i=>i.category===cat);
+  if(status!=='all'){
+    items=items.filter(i=>{
+      const avail=inventoryChanges[i.id]!==undefined?inventoryChanges[i.id]:(saved[i.id]!==undefined?saved[i.id]:i.stock);
+      if(status==='out')return avail===0;
+      if(status==='low')return avail>0&&avail<=3;
+      return avail>4;
+    });
+  }
+
+  if(!items.length){toast('Sin equipos para eliminar con los filtros aplicados.','info');return;}
+  
+  const msg=`¿Eliminar completamente ${items.length} equipo${items.length!==1?'s':''} del catálogo E inventario?\nFiltros: Búsqueda['${search||'todas'}'], Categoría[${cat}], Estado[${status}]`;
+  if(!confirm(msg))return;
+  
+  const inv=getInventory();
+  const deleted=new Set(getDeletedItems());
+  const custom=getCustomItems();
+  const idsToDelete=[];
+  
+  items.forEach(item=>{
+    delete inv[item.id];
+    idsToDelete.push(item.id);
+    if(item.custom){
+      const idx=custom.findIndex(c=>c.id===item.id);
+      if(idx>-1)custom.splice(idx,1);
+    }else{
+      deleted.add(item.id);
+    }
+  });
+  
+  localStorage.setItem('lc_inventory',JSON.stringify(inv));
+  localStorage.setItem('lc_deleted_items',JSON.stringify([...deleted]));
+  localStorage.setItem('lc_custom_items',JSON.stringify(custom));
+  
+  inventoryChanges={};
+  
+  // Send delete request to DB
+  sendDeleteToDatabase(idsToDelete);
+  
+  renderInventory();
+  toast(`🗑 ${items.length} equipo${items.length!==1?'s':''} eliminado${items.length!==1?'s':''} completamente. Enviando a BD...`,'warn');
+}
+
+async function sendDeleteToDatabase(ids){
+  try{
+    const payload=ids.map(id=>({id, stock_nuevo: -1}));
+    const res=await fetch(API_ROOT,{
+      method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({action:'delete', items:payload})
+    });
+    const data=await res.json().catch(()=>null);
+    if(data && data.status==='success'){
+      toast('✅ Eliminados de la BD también.','ok');
+    }else{
+      toast('⚠️ BD: es posible que no se hayan sincronizado todos.','warn');
+    }
+  }catch(err){
+    toast('⚠️ Error al sincronizar con BD: '+err.message,'err');
+  }
 }
 
 /* ================================================================
@@ -888,24 +1347,65 @@ function saveOneItem(id){
   if(!Object.keys(catalogEdits).length)$('unsaved-indicator').classList.add('hidden');
 }
 
-function publishCatalog(){
+async function publishCatalog(){
   const ov=getCatalogOverrides();
   Object.keys(catalogEdits).forEach(id=>{
+    if(id==='_structureChanged') return;
     ov[id]=Object.assign(ov[id]||{},catalogEdits[id]);
   });
   localStorage.setItem('lc_catalog',JSON.stringify(ov));
+
+  // Push overrides to API
+  const overrideItems = Object.entries(ov).map(([id, v]) => ({id, ...v}));
+  if(overrideItems.length){
+    try {
+      await fetch(API_ROOT, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({action:'save_catalog_override', items: overrideItems})
+      });
+    } catch(err){ console.error('publishCatalog overrides', err); }
+  }
+
+  // Push custom items
+  const customs = getCustomItems();
+  if(customs.length){
+    try {
+      await fetch(API_ROOT, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({action:'save_custom', items: customs})
+      });
+    } catch(err){ console.error('publishCatalog customs', err); }
+  }
+
+  // Push deleted base items
+  const deleted = getDeletedItems();
+  if(deleted.length){
+    try {
+      await fetch(API_ROOT, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({action:'mark_deleted', ids: deleted})
+      });
+    } catch(err){ console.error('publishCatalog deleted', err); }
+  }
+
   catalogEdits={};
   $('unsaved-indicator').classList.add('hidden');
-  toast('🚀 Catálogo publicado. Los cambios son visibles para los clientes.','ok');
+  toast('🚀 Catálogo publicado y sincronizado con el servidor.','ok');
   logActivity('admin','Admin publicó cambios en el catálogo',{icon:'✏️',bg:'var(--pu-d)'});
 }
 
-function resetCatalog(){
+async function resetCatalog(){
   if(!confirm('¿Descartar todos los cambios del catálogo?'))return;
   catalogEdits={};
   localStorage.removeItem('lc_catalog');
   $('unsaved-indicator').classList.add('hidden');
-  renderCatalog();toast('Catálogo restaurado a valores originales.','info');
+  try {
+    await fetch(API_ROOT, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action:'reset_catalog'})
+    });
+  } catch(err){ console.error('resetCatalog', err); }
+  renderCatalog();toast('Catálogo restaurado y sincronizado con el servidor.','info');
 }
 
 function initDragDrop(){
@@ -983,7 +1483,7 @@ function openNewItemModal(prefillCat){
 }
 function closeNewItemModal(){$('new-item-modal').classList.add('hidden')}
 
-function saveNewItem(){
+async function saveNewItem(){
   const name=$('nim-name').value.trim();
   const desc=$('nim-desc').value.trim();
   const cat=$('nim-cat').value;
@@ -997,36 +1497,84 @@ function saveNewItem(){
   if(!id) id=`custom-${cat}-${Date.now()}`;
 
   const custom=getCustomItems();
-  // Replace if same ID exists
   const idx=custom.findIndex(i=>i.id===id);
   const newItem={id,name,desc,price,stock,min,category:cat,section,custom:true,created:Date.now()};
   if(idx>-1)custom[idx]=newItem; else custom.push(newItem);
   saveCustomItems(custom);
 
-  // Also update inventory
   const inv=getInventory();inv[id]=stock;localStorage.setItem('lc_inventory',JSON.stringify(inv));
-
-  // Remove from deleted list if it was there
   saveDeletedItems(getDeletedItems().filter(d=>d!==id));
+
+  // Push to API immediately
+  try {
+    await fetch(API_ROOT, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action:'save_custom', items:[newItem]})
+    });
+    // also remove from deleted on the server in case it existed
+    await fetch(API_ROOT, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action:'restore_deleted', ids:[id]})
+    });
+  } catch(err){ console.error('saveNewItem sync', err); }
 
   closeNewItemModal();
   markUnsaved();
   renderCatalog();
-  toast(`✅ "${name}" agregado al catálogo. Publica para que sea visible.`,'ok');
+  if(currentPage==='inventory') renderInventory();
+  toast(`✅ "${name}" agregado al catálogo y sincronizado.`,'ok');
 }
 
-function deleteCustomItem(id,name){
+async function deleteCustomItem(id,name){
   if(!confirm(`¿Eliminar "${name}" del catálogo?\nEsto lo ocultará en el configurador al publicar.`))return;
-  // Custom items: remove from list
+  const wasCustom = getCustomItems().some(i=>i.id===id);
   const custom=getCustomItems().filter(i=>i.id!==id);
   saveCustomItems(custom);
-  // Base items: add to deleted list
   const deleted=getDeletedItems();
   if(!deleted.includes(id))deleted.push(id);
   saveDeletedItems(deleted);
+
+  try {
+    if(wasCustom){
+      await fetch(API_ROOT, {
+        method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({action:'delete_custom', ids:[id]})
+      });
+    }
+    await fetch(API_ROOT, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({action:'mark_deleted', ids:[id]})
+    });
+  } catch(err){ console.error('deleteCustomItem sync', err); }
+
   markUnsaved();
   renderCatalog();
-  toast(`"${name}" eliminado del catálogo.`,'warn');
+  if(currentPage==='inventory') renderInventory();
+  toast(`"${name}" eliminado y sincronizado.`,'warn');
+}
+
+function bulkDeleteCatalog(){
+  if(!confirm('¿Eliminar todo el catálogo actual? Esto ocultará todos los equipos en el configurador al publicar.'))return;
+  const baseIds=getAllCatalogItems().map(i=>i.id);
+  const deleted=new Set(getDeletedItems());
+  baseIds.forEach(id=>deleted.add(id));
+  saveDeletedItems([...deleted]);
+  saveCustomItems([]);
+  markUnsaved();
+  renderCatalog();
+  toast('✅ Catálogo marcado como eliminado masivamente. Publica para aplicar los cambios.','warn');
+}
+
+function bulkDeleteCatalog(){
+  if(!confirm('¿Eliminar todo el catálogo actual? Esto ocultará todos los equipos en el configurador al publicar.'))return;
+  const baseIds=getAllCatalogItems().map(i=>i.id);
+  const deleted=new Set(getDeletedItems());
+  baseIds.forEach(id=>deleted.add(id));
+  saveDeletedItems([...deleted]);
+  saveCustomItems([]);
+  markUnsaved();
+  renderCatalog();
+  toast('✅ Catálogo marcado como eliminado masivamente. Publica para aplicar los cambios.','warn');
 }
 
 function markUnsaved(){
@@ -1043,21 +1591,28 @@ renderCatalog=function(){
   const overrides=getCatalogOverrides();
   const customItems=getCustomItems();
   const deletedIds=getDeletedItems();
+  
+  const knownCategories = new Set(CATALOG_STEPS.map(s => s.id));
 
   // Build merged step list: base steps + inject custom items into matching categories
   const mergedSteps=CATALOG_STEPS.map(step=>{
     const stepCustom=customItems.filter(ci=>ci.category===step.id);
-    // Group custom by section
-    const customBySec={};
-    stepCustom.forEach(ci=>{
-      if(!customBySec[ci.section])customBySec[ci.section]=[];
-      customBySec[ci.section].push(ci);
-    });
 
     const filteredSections=step.sections.map(sec=>({
       ...sec,
       items:sec.items.filter(item=>!deletedIds.includes(item.id))
     }));
+
+    const customBySec={};
+    stepCustom.forEach(ci=>{
+      const match = filteredSections.find(s => s.lbl.toLowerCase() === (ci.section||'').toLowerCase());
+      if(match) match.items.push(ci);
+      else {
+        const secName = ci.section || 'Equipos adicionales';
+        if(!customBySec[secName]) customBySec[secName]=[];
+        customBySec[secName].push(ci);
+      }
+    });
 
     // Add custom sections
     const extraSecs=Object.entries(customBySec).map(([secLbl,items])=>({
@@ -1070,7 +1625,38 @@ renderCatalog=function(){
     return{...step,sections:[...filteredSections,...extraSecs]};
   });
 
-  $('catalog-editor').innerHTML=mergedSteps.map(step=>`
+  // Add categories that are not in CATALOG_STEPS
+  const unknownCustom = customItems.filter(ci => !knownCategories.has(ci.category));
+  const extraCategoriesMap = {};
+  unknownCustom.forEach(ci => {
+    const cat = ci.category || 'otros';
+    if(!extraCategoriesMap[cat]) extraCategoriesMap[cat] = [];
+    extraCategoriesMap[cat].push(ci);
+  });
+
+  const extraSteps = Object.entries(extraCategoriesMap).map(([catId, items]) => {
+    const sectionsMap = {};
+    items.forEach(ci => {
+      const sec = ci.section || 'Equipos adicionales';
+      if(!sectionsMap[sec]) sectionsMap[sec] = [];
+      sectionsMap[sec].push(ci);
+    });
+    return {
+      id: catId,
+      label: catId.charAt(0).toUpperCase() + catId.slice(1),
+      icon: '📦',
+      sections: Object.entries(sectionsMap).map(([secLbl, secItems]) => ({
+        id: `custom-sec-${catId}-${secLbl.replace(/\s+/g,'-')}`,
+        lbl: secLbl,
+        items: secItems,
+        isCustom: true
+      }))
+    };
+  });
+
+  const allSteps = [...mergedSteps, ...extraSteps];
+
+  $('catalog-editor').innerHTML=allSteps.map(step=>`
     <div class="cat-section">
       <div class="cat-sec-hd" onclick="toggleCatSection('${step.id}')">
         <div class="cat-sec-title">${step.icon} ${step.label}</div>
@@ -1148,14 +1734,14 @@ function downloadStockTemplate(){
   const allItems=[...items,...customItems.map(ci=>({...ci,category:ci.category,section:ci.section}))];
   const inv=getInventory();
 
-  const header='id,nombre,categoria,seccion,stock_actual,stock_nuevo\n';
+  const header='id,nombre,categoria,seccion,stock_actual,stock_nuevo,precio\n';
   const rows=allItems.map(i=>{
     const cur=inv[i.id]!==undefined?inv[i.id]:i.stock;
-    return `${i.id},"${i.name}","${i.categoryLabel||i.category}","${i.section}",${cur},${cur}`;
+    return `${i.id},"${i.name}","${i.categoryLabel||i.category}","${i.section}",${cur},${cur},${i.price||0}`;
   }).join('\n');
   const content=header+rows;
   downloadFile(`liveco-stock-${new Date().toISOString().slice(0,10)}.csv`,content,'text/csv');
-  toast('📄 Plantilla CSV descargada. Edita la columna "stock_nuevo" y súbela.','info');
+  toast('📄 Plantilla CSV descargada. Edita las columnas "stock_nuevo" y "precio" si quieres actualizar precio también.','info');
 }
 
 function handleStockFileUpload(input){
@@ -1187,6 +1773,7 @@ function parseAndPreviewCSV(text,fileName){
   const nameCol=headers.findIndex(h=>h.includes('nombre')||h==='name');
   const newStockCol=headers.findIndex(h=>h.includes('stock_nuevo')||h==='stock_new'||h==='nuevo');
   const curStockCol=headers.findIndex(h=>h.includes('stock_actual')||h==='stock_current'||h==='actual');
+  const priceCol=headers.findIndex(h=>h.includes('precio')||h==='price');
 
   if(idCol===-1||newStockCol===-1){
     toast('El CSV debe tener columnas "id" y "stock_nuevo". Descarga la plantilla.','err');return;
@@ -1206,16 +1793,22 @@ function parseAndPreviewCSV(text,fileName){
     const id=clean(cols[idCol]);
     const newStock=parseInt(clean(cols[newStockCol]));
     const name=nameCol>-1?clean(cols[nameCol]):id;
+    const price=priceCol>-1 ? parseInt(clean(cols[priceCol])) : undefined;
+    
+    const catCol=headers.findIndex(h=>h.includes('categoria')||h==='category');
+    const secCol=headers.findIndex(h=>h.includes('seccion')||h==='section');
+    const category=catCol>-1 ? clean(cols[catCol]) : undefined;
+    const section=secCol>-1 ? clean(cols[secCol]) : undefined;
 
     if(!id){errors.push(`Fila ${li+2}: ID vacío`);return;}
     if(isNaN(newStock)||newStock<0){errors.push(`Fila ${li+2} (${id}): stock inválido "${clean(cols[newStockCol])}"`);return;}
 
     const curStock=inv[id]!==undefined?inv[id]:(allItems.find(i=>i.id===id)||{}).stock||0;
     const known=allIds.has(id);
-    changes.push({id,name,curStock,newStock,delta:newStock-curStock,known});
+    changes.push({id,name,curStock,newStock,delta:newStock-curStock,known,price,category,section});
   });
 
-  uploadedStockData=changes.filter(c=>c.known);
+  uploadedStockData=changes;
   const unknownRows=changes.filter(c=>!c.known);
 
   const el=$('stock-upload-result');
@@ -1235,7 +1828,7 @@ function parseAndPreviewCSV(text,fileName){
 
   if(unknownRows.length){
     html+=`<div style="background:var(--ye-d);border:1px solid rgba(245,200,66,.2);border-radius:var(--r2);padding:12px;margin-bottom:12px;font-size:11px">
-      <div style="color:var(--ye);font-weight:700;margin-bottom:6px">⚠ ${unknownRows.length} ID(s) no encontrados en el catálogo (se ignorarán):</div>
+      <div style="color:var(--ye);font-weight:700;margin-bottom:6px">⚠ ${unknownRows.length} ID(s) no encontrados en el catálogo (se crearán en la base de datos si no existen):</div>
       ${unknownRows.map(r=>`<div style="color:var(--t2);font-family:monospace;padding:1px 0">• ${r.id}</div>`).join('')}
     </div>`;
   }
@@ -1244,13 +1837,14 @@ function parseAndPreviewCSV(text,fileName){
     const gains=uploadedStockData.filter(c=>c.delta>0);
     const losses=uploadedStockData.filter(c=>c.delta<0);
     const same=uploadedStockData.filter(c=>c.delta===0);
+    const showPrice=uploadedStockData.some(c=>c.price!==undefined);
     html+=`<div style="background:var(--gr-d);border:1px solid rgba(45,212,160,.2);border-radius:var(--r2);padding:12px;margin-bottom:14px;font-size:11px">
       <div style="color:var(--gr);font-weight:700;margin-bottom:4px">✓ ${uploadedStockData.length} cambios listos para aplicar</div>
       <div style="color:var(--t2)">${gains.length} aumentos · ${losses.length} reducciones · ${same.length} sin cambio</div>
     </div>
     <div style="max-height:280px;overflow-y:auto;border:1px solid var(--bd);border-radius:var(--r2)">
       <table class="admin-tbl">
-        <thead><tr><th>Equipo</th><th>ID</th><th style="text-align:center">Actual</th><th style="text-align:center">Nuevo</th><th style="text-align:center">Δ</th></tr></thead>
+        <thead><tr><th>Equipo</th><th>ID</th><th style="text-align:center">Actual</th><th style="text-align:center">Nuevo</th><th style="text-align:center">Δ</th>${showPrice?'<th style="text-align:center">Precio</th>':''}</tr></thead>
         <tbody>
           ${uploadedStockData.map(c=>{
             const deltaColor=c.delta>0?'var(--gr)':c.delta<0?'var(--re)':'var(--t3)';
@@ -1261,6 +1855,7 @@ function parseAndPreviewCSV(text,fileName){
               <td style="text-align:center;font-size:12px">${c.curStock}</td>
               <td style="text-align:center;font-weight:700;font-size:12px;color:${c.delta!==0?'var(--ac)':'var(--t2)'}">${c.newStock}</td>
               <td style="text-align:center;font-weight:700;font-size:12px;color:${deltaColor}">${deltaStr}</td>
+              ${showPrice?`<td style="text-align:center;font-size:12px;font-weight:700;color:var(--t2)">${c.price!==undefined?c.price:'—'}</td>`:''}
             </tr>`;
           }).join('')}
         </tbody>
@@ -1276,16 +1871,89 @@ function parseAndPreviewCSV(text,fileName){
   $('stock-upload-modal').classList.remove('hidden');
 }
 
-function applyUploadedStock(){
+async function applyUploadedStock(){
   if(!uploadedStockData||!uploadedStockData.length)return;
   const inv=getInventory();
-  uploadedStockData.forEach(c=>{inv[c.id]=c.newStock;});
+  const catalog=getCatalogOverrides();
+  const deleted=getDeletedItems();
+  const customs=getCustomItems();
+  const count=uploadedStockData.length;
+  const newCustoms=[];
+  const overrideUpdates=[];
+  const inventoryUpdates=[];
+  const restoreIds=[];
+
+  uploadedStockData.forEach(c=>{
+    inv[c.id]=c.newStock;
+    inventoryUpdates.push({id:c.id, name:c.name, stock:c.newStock});
+
+    if(c.price!==undefined && !isNaN(c.price)){
+      catalog[c.id]=Object.assign(catalog[c.id]||{}, {price:c.price});
+      overrideUpdates.push({id:c.id, price:c.price});
+    }
+
+    const delIdx=deleted.indexOf(c.id);
+    if(delIdx>-1){deleted.splice(delIdx,1);restoreIds.push(c.id);}
+
+    if(c.known) {
+      const existingCustom = customs.find(x=>x.id===c.id);
+      if(existingCustom) {
+        let updated = false;
+        if(c.category && c.category.toLowerCase() !== (existingCustom.category||'').toLowerCase()) { existingCustom.category = c.category.toLowerCase(); updated = true; }
+        if(c.section && c.section !== existingCustom.section) { existingCustom.section = c.section; updated = true; }
+        if(c.name && c.name !== existingCustom.name) { existingCustom.name = c.name; updated = true; }
+        if(updated && !newCustoms.includes(existingCustom)) newCustoms.push(existingCustom);
+      }
+    }
+
+    // Auto-create a custom item record for unknown IDs so they appear in inventory + cotizador
+    if(!c.known && !customs.some(x=>x.id===c.id)){
+      const newC = {
+        id:c.id,
+        name:c.name||c.id,
+        desc:'Equipo importado vía CSV',
+        price:(c.price!==undefined&&!isNaN(c.price))?c.price:0,
+        stock:c.newStock,
+        min:1,
+        category:c.category ? c.category.toLowerCase() : 'audio',
+        section:c.section || 'Equipos importados',
+        custom:true,
+        created:Date.now()
+      };
+      customs.push(newC);
+      newCustoms.push(newC);
+    }
+  });
+
   localStorage.setItem('lc_inventory',JSON.stringify(inv));
-  inventoryChanges={};
+  localStorage.setItem('lc_catalog',JSON.stringify(catalog));
+  localStorage.setItem('lc_deleted_items',JSON.stringify(deleted));
+  saveCustomItems(customs);
+
+  // Sync everything to API
+  try {
+    if(inventoryUpdates.length){
+      await fetch(API_ROOT,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(inventoryUpdates.map(i=>({id:i.id,name:i.name,stock:i.stock})))});
+    }
+    if(overrideUpdates.length){
+      await fetch(API_ROOT,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({action:'save_catalog_override',items:overrideUpdates})});
+    }
+    if(newCustoms.length){
+      await fetch(API_ROOT,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({action:'save_custom',items:newCustoms})});
+    }
+    if(restoreIds.length){
+      await fetch(API_ROOT,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({action:'restore_deleted',ids:restoreIds})});
+    }
+  } catch(err){ console.error('applyUploadedStock sync', err); toast('⚠️ Algunos cambios no llegaron al servidor.','warn'); }
+
   uploadedStockData=null;
   closeStockModal();
   renderInventory();
-  toast(`✅ Stock actualizado para ${uploadedStockData?.length||'todos los'} equipos.`,'ok');
+  toast(`✅ Stock actualizado y sincronizado para ${count} equipos${newCustoms.length?` (${newCustoms.length} nuevos)`:''}.`, 'ok');
   logActivity('admin','Admin actualizó stock masivo via CSV',{icon:'📂',bg:'var(--bl-d)'});
 }
 
